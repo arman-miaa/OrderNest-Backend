@@ -1,0 +1,9 @@
+node_modules
+# Keep environment variables out of version control
+dist
+.vercel
+.vscode
+habit_api_collection.json
+docs
+.env.example
+postman_collection.json
