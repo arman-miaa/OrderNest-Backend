@@ -16,7 +16,7 @@ model User {
     password     String
     dob          DateTime?
     isVerified   Boolean    @default(false)
-    role         UserRole   @default(USER)
+    role         UserRole   @default(MANAGER)
     status       UserStatus @default(ACTIVE)
 
     fcmToken     String?
@@ -29,8 +29,9 @@ model User {
 }
 
 enum UserRole {
-    USER
-    ADMIN
+   MANAGER
+    STAFF
+    KITCHEN
 }
 
 enum UserStatus {

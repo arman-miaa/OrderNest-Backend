@@ -24,12 +24,12 @@ const createUserIntoDb = async (payload: any) => {
     );
   }
 
-  if(payload.role === UserRole.ADMIN){
-    throw new ApiError(
-      400,
-      `Cannot register as ADMIN role`
-    );
-  }
+  // if(payload.role === UserRole.MANAGER){
+  //   throw new ApiError(
+  //     400,
+  //     `Cannot register as Manager role`
+  //   );
+  // }
   // Hash the password
   const hashedPassword: string = await bcrypt.hash(
     payload.password!,
