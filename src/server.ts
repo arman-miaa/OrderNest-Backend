@@ -30,6 +30,10 @@ async function startServer() {
     );
   });
 
+  // Initialize Socket.io
+  const { initSocket } = require('./shared/websocket');
+  initSocket(server);
+
 }
 
 async function main() {

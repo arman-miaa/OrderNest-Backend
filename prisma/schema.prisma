@@ -1,49 +1,126 @@
 generator client {
-    provider = "prisma-client-js"
+  provider = "prisma-client-js"
 }
 
 datasource db {
-    provider = "mongodb"
-    url      = env("DATABASE_URL")
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
 }
 
 model User {
-    id           String     @id @default(auto()) @map("_id") @db.ObjectId
-    fullName     String
-    email        String     @unique
-    profileImage String?    @default("")
-    location     String?    @default("")
-    password     String
-    phone        String?    @default("")
-    dob          DateTime?
-    isVerified   Boolean    @default(false)
-    role         UserRole   @default(MANAGER)
-    status       UserStatus @default(ACTIVE)
+  id           String     @id @default(auto()) @map("_id") @db.ObjectId
+  fullName     String
+  email        String     @unique
+  profileImage String?    @default("")
+  location     String?    @default("")
+  password     String
+  phone        String?    @default("")
+  dob          DateTime?
+  isVerified   Boolean    @default(false)
+  role         UserRole   @default(MANAGER)
+  status       UserStatus @default(ACTIVE)
 
+  pin       String? // 4-digit PIN for Staff/Kitchen login
+  shift     String? // "morning" | "evening" | "all-day"
+  device    String? // "Tablet-01", "Tablet-02", "Wall Screen"
+  lastLogin DateTime? // Track last login time
 
-    pin          String?    // 4-digit PIN for Staff/Kitchen login
-    shift        String?    // "morning" | "evening" | "all-day"
-    device       String?    // "Tablet-01", "Tablet-02", "Wall Screen"
-    lastLogin    DateTime?  // Track last login time
+  fcmToken     String?
+  otp          Int?
+  otpExpiresAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-    fcmToken     String?
-    otp          Int?
-    otpExpiresAt DateTime?
-    createdAt    DateTime   @default(now())
-    updatedAt    DateTime   @updatedAt
-
-    @@map("users")
+  @@map("users")
 }
 
 enum UserRole {
-   MANAGER
-    STAFF
-    KITCHEN
+  MANAGER
+  STAFF
+  KITCHEN
 }
 
 enum UserStatus {
-    ACTIVE
-    INACTIVE
-    BLOCKED
-    SUSPENDED
+  ACTIVE
+  INACTIVE
+  BLOCKED
+  SUSPENDED
+}
+
+model Table {
+  id          String      @id @default(auto()) @map("_id") @db.ObjectId
+  tableNumber String      @unique
+  capacity    Int         @default(4)
+  status      TableStatus @default(AVAILABLE)
+  orders      Order[]
+  alerts      Alert[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@map("tables")
+}
+
+model MenuItem {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  description String?
+  price       Float
+  category    String?
+  image       String?
+  inStock     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("menu_items")
+}
+
+model Order {
+  id            String        @id @default(auto()) @map("_id") @db.ObjectId
+  tableId       String        @db.ObjectId
+  table         Table         @relation(fields: [tableId], references: [id])
+  items         Json // Array of ordered items with quantity and price
+  totalAmount   Float
+  status        OrderStatus   @default(PENDING)
+  paymentStatus PaymentStatus @default(PENDING)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("orders")
+}
+
+model Alert {
+  id        String      @id @default(auto()) @map("_id") @db.ObjectId
+  tableId   String?     @db.ObjectId
+  table     Table?      @relation(fields: [tableId], references: [id])
+  type      String // e.g., "WAITER_CALL", "BILL_REQUEST"
+  status    AlertStatus @default(PENDING)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@map("alerts")
+}
+
+enum TableStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+}
+
+enum OrderStatus {
+  PENDING
+  PREPARING
+  READY
+  SERVED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+enum AlertStatus {
+  PENDING
+  RESOLVED
 }
