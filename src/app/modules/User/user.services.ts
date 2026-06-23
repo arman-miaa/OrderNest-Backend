@@ -35,7 +35,6 @@ const updateUser = async (
   updateData: Partial<User>,
   imageUrl?: string,
 ) => {
-  // Find the existing user from the database
   const existingUser = await prisma.user.findUnique({
     where: { id: userId },
   });
@@ -44,8 +43,6 @@ const updateUser = async (
     throw new ApiError(httpStatus.NOT_FOUND, "User not found");
   }
 
-  // Create a filtered update object, skipping empty string values, null, or undefined
-  // and restricted from sensitive fields
   const forbiddenFields = [
     "id",
     "role",
@@ -68,7 +65,6 @@ const updateUser = async (
     }
   }
 
-  // Check if the email is changing, and if so, check for existing users with the new email
   if (
     filteredUpdateData.email &&
     filteredUpdateData.email !== existingUser.email
@@ -84,7 +80,6 @@ const updateUser = async (
     }
   }
 
-  // Handle password hashing if password is being updated
   if (filteredUpdateData.password) {
     filteredUpdateData.password = await bcrypt.hash(
       filteredUpdateData.password,
@@ -92,18 +87,15 @@ const updateUser = async (
     );
   }
 
-  // Update profile image only if imageUrl is provided
   if (imageUrl) {
     filteredUpdateData.profileImage = imageUrl;
   }
 
-  // Perform the update on the user
   const updatedUser = await prisma.user.update({
     where: { id: userId },
     data: filteredUpdateData,
   });
 
-  // Omit sensitive data like password and fcmToken before returning
   const userWithoutSensitive = omit(updatedUser, [
     "password",
     "fcmToken",
@@ -148,7 +140,7 @@ const getAllUsers = async (filters: IUserFilters, options: any) => {
   const [result, total, totalUsers, totalActiveUsers, totalSuspendUsers] =
     await prisma.$transaction([
       prisma.user.findMany({
-        where: { ...whereConditions, role: { not: UserRole.ADMIN } },
+        where: whereConditions,
         skip,
         take: limit,
         orderBy: {
@@ -164,27 +156,13 @@ const getAllUsers = async (filters: IUserFilters, options: any) => {
           createdAt: true,
         },
       }),
-
+      prisma.user.count({ where: whereConditions }),
+      prisma.user.count({ where: whereConditions }),
       prisma.user.count({
-        where: { ...whereConditions, role: { not: UserRole.ADMIN } }, // ✅ must match
+        where: { status: UserStatus.ACTIVE, ...whereConditions },
       }),
-
       prisma.user.count({
-        where: { role: { not: UserRole.ADMIN } }, // exclude admin globally
-      }),
-
-      prisma.user.count({
-        where: {
-          status: UserStatus.ACTIVE,
-          role: { not: UserRole.ADMIN },
-        },
-      }),
-
-      prisma.user.count({
-        where: {
-          status: UserStatus.SUSPENDED,
-          role: { not: UserRole.ADMIN },
-        },
+        where: { status: UserStatus.SUSPENDED, ...whereConditions },
       }),
     ]);
 
@@ -201,13 +179,10 @@ const getAllUsers = async (filters: IUserFilters, options: any) => {
   };
 };
 
-
-//get single
+//get single user
 const getSingleUserById = async (id: string) => {
   const user = await prisma.user.findUnique({
-    where: {
-      id: id,
-    },
+    where: { id: id },
   });
 
   if (!user) {
@@ -219,7 +194,7 @@ const getSingleUserById = async (id: string) => {
   };
 };
 
-// delete user
+// delete user by admin/manager
 const removeUserByAdmin = async (id: string) => {
   const findUserToDelete = await prisma.user.findUnique({
     where: { id: id },
@@ -243,7 +218,7 @@ const removeUserByAdmin = async (id: string) => {
     const html = `
       <div style="font-family: Arial, sans-serif; line-height:1.6;">
         <h2>Hello ${deletedUser.fullName || ""},</h2>
-        <p>We’re writing to let you know that an admin has <strong>removed your account</strong>.</p>
+        <p>We're writing to let you know that an admin has <strong>removed your account</strong>.</p>
         <p>If you believe this was a mistake or you have any questions, please contact support.</p>
         <hr style="border:none;border-top:1px solid #eee; margin:16px 0;" />
         <p style="color:#6b7280; font-size:12px;">This mailbox is not monitored. Please reach out through the support portal for assistance.</p>
@@ -267,13 +242,6 @@ const changeUserRole = async (userId: string, role: UserRole) => {
     throw new ApiError(httpStatus.NOT_FOUND, "User not found");
   }
 
-  if (user.role === UserRole.ADMIN) {
-    throw new ApiError(
-      httpStatus.FORBIDDEN,
-      "Your not authorized to change admin role",
-    );
-  }
-
   const updatedUser = await prisma.user.update({
     where: { id: userId },
     data: { role },
@@ -288,8 +256,7 @@ const changeUserRole = async (userId: string, role: UserRole) => {
   return updatedUser;
 };
 
-
-
+// suspend or activate user
 const suspendOrActivateUser = async (userId: string, status: UserStatus) => {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -328,6 +295,293 @@ const suspendOrActivateUser = async (userId: string, status: UserStatus) => {
   return updatedUser;
 };
 
+// ========== ORDER NEST: Create Staff or Kitchen by Manager ==========
+const createStaffByManager = async (payload: {
+  fullName: string;
+  email: string;
+  phone?: string;
+  role: "STAFF" | "KITCHEN";
+  pin: string;
+  shift: string;
+  device?: string;
+}) => {
+  // Check duplicate email
+  const existingUser = await prisma.user.findUnique({
+    where: { email: payload.email }
+  });
+
+  if (existingUser) {
+    throw new ApiError(httpStatus.BAD_REQUEST, "Email already exists");
+  }
+
+  // Kitchen: only 1 allowed
+  if (payload.role === "KITCHEN") {
+    const existingKitchen = await prisma.user.findFirst({
+      where: { role: "KITCHEN" }
+    });
+    if (existingKitchen) {
+      throw new ApiError(httpStatus.BAD_REQUEST, "Kitchen account already exists. Only one kitchen display is allowed.");
+    }
+  }
+
+  // Hash PIN as password
+  const hashedPassword = await bcrypt.hash(
+    payload.pin,
+    Number(config.bcrypt_salt_rounds)
+  );
+
+  const newUser = await prisma.user.create({
+    data: {
+      fullName: payload.fullName,
+      email: payload.email,
+      phone: payload.phone || "",
+      password: hashedPassword,
+      role: payload.role,
+      pin: payload.pin,
+      shift: payload.shift || (payload.role === "KITCHEN" ? "all-day" : "morning"),
+      device: payload.device || (payload.role === "KITCHEN" ? "Wall Screen" : "Tablet-01"),
+      status: "ACTIVE",
+    },
+    select: {
+      id: true,
+      fullName: true,
+      email: true,
+      phone: true,
+      role: true,
+      pin: true,
+      shift: true,
+      device: true,
+      status: true,
+      createdAt: true,
+    }
+  });
+
+  return newUser;
+};
+
+// ========== ORDER NEST: Get All Staff ==========
+const getAllStaff = async (filters: any, options: any) => {
+  const { page, limit, skip, sortBy, sortOrder } =
+    paginationHelper.calculatePagination(options);
+  const { searchTerm, role, shift, status } = filters;
+
+  const andConditions: Prisma.UserWhereInput[] = [];
+
+  // Only STAFF and KITCHEN roles
+  andConditions.push({
+    role: { in: ["STAFF", "KITCHEN"] }
+  });
+
+  if (searchTerm) {
+    andConditions.push({
+      OR: ["fullName", "email"].map((field) => ({
+        [field]: { contains: searchTerm, mode: "insensitive" }
+      }))
+    });
+  }
+
+  if (role && (role === "STAFF" || role === "KITCHEN")) {
+    andConditions.push({ role });
+  }
+
+ if (shift) {
+    andConditions.push({
+      shift: { equals: shift }  // ✅ Use equals instead of direct assignment
+    } as any); // Prisma might not recognize custom field, use 'as any' if needed
+  }
+
+  if (status) {
+    andConditions.push({ status });
+  }
+
+  const whereConditions: Prisma.UserWhereInput = { AND: andConditions };
+
+  const [result, total, staffCount, kitchenCount] = await prisma.$transaction([
+    prisma.user.findMany({
+      where: whereConditions,
+      skip,
+      take: limit,
+      orderBy: { [sortBy]: sortOrder },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        phone: true,
+        role: true,
+        pin: true,
+        shift: true,
+        device: true,
+        status: true,
+        createdAt: true,
+        lastLogin: true,
+      }
+    }),
+    prisma.user.count({ where: whereConditions }),
+    prisma.user.count({ where: { ...whereConditions, role: "STAFF" } }),
+    prisma.user.count({ where: { ...whereConditions, role: "KITCHEN" } }),
+  ]);
+
+  return {
+    meta: { total, page, limit, staffCount, kitchenCount },
+    data: result,
+  };
+};
+
+// ========== ORDER NEST: Get Single Staff ==========
+const getSingleStaff = async (id: string) => {
+  const staff = await prisma.user.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      fullName: true,
+      email: true,
+      phone: true,
+      role: true,
+      pin: true,
+      shift: true,
+      device: true,
+      status: true,
+      lastLogin: true,
+      createdAt: true,
+    }
+  });
+
+  if (!staff) {
+    throw new ApiError(httpStatus.NOT_FOUND, "Staff not found");
+  }
+
+  if (staff.role !== "STAFF" && staff.role !== "KITCHEN") {
+    throw new ApiError(httpStatus.BAD_REQUEST, "This user is not a staff member");
+  }
+
+  return staff;
+};
+
+// ========== ORDER NEST: Update Staff by Manager ==========
+const updateStaffByManager = async (id: string, payload: any) => {
+  const staff = await prisma.user.findUnique({ where: { id } });
+
+  if (!staff) {
+    throw new ApiError(httpStatus.NOT_FOUND, "Staff not found");
+  }
+
+  if (staff.role !== "STAFF" && staff.role !== "KITCHEN") {
+    throw new ApiError(httpStatus.BAD_REQUEST, "This user is not a staff member");
+  }
+
+  // Check email uniqueness if changing
+  if (payload.email && payload.email !== staff.email) {
+    const emailExists = await prisma.user.findFirst({
+      where: {
+        email: payload.email,
+        id: { not: id },
+      },
+    });
+    if (emailExists) {
+      throw new ApiError(httpStatus.BAD_REQUEST, "Email already exists");
+    }
+  }
+
+  // If PIN changed, re-hash
+  if (payload.pin) {
+    payload.password = await bcrypt.hash(
+      payload.pin,
+      Number(config.bcrypt_salt_rounds)
+    );
+  }
+
+  const updated = await prisma.user.update({
+    where: { id },
+    data: payload,
+    select: {
+      id: true,
+      fullName: true,
+      email: true,
+      phone: true,
+      role: true,
+      pin: true,
+      shift: true,
+      device: true,
+      status: true,
+    }
+  });
+
+  return updated;
+};
+
+// ========== ORDER NEST: Toggle Staff Status ==========
+const toggleStaffStatus = async (id: string) => {
+  const staff = await prisma.user.findUnique({ where: { id } });
+
+  if (!staff) {
+    throw new ApiError(httpStatus.NOT_FOUND, "Staff not found");
+  }
+
+  // Protect kitchen - cannot be disabled
+  if (staff.role === "KITCHEN") {
+    throw new ApiError(
+      httpStatus.FORBIDDEN,
+      "Cannot change kitchen display status. It's required for system operation."
+    );
+  }
+
+  const newStatus = 
+    staff.status === "ACTIVE" 
+      ? "SUSPENDED" 
+      : "ACTIVE";
+
+  const updated = await prisma.user.update({
+    where: { id },
+    data: { status: newStatus },
+    select: {
+      id: true,
+      fullName: true,
+      email: true,
+      role: true,
+      status: true,
+    }
+  });
+
+  return updated;
+};
+
+// ========== ORDER NEST: Delete Staff by Manager ==========
+const deleteStaffByManager = async (id: string) => {
+  const staff = await prisma.user.findUnique({ where: { id } });
+
+  if (!staff) {
+    throw new ApiError(httpStatus.NOT_FOUND, "Staff not found");
+  }
+
+  // Protect kitchen - cannot be deleted
+  if (staff.role === "KITCHEN") {
+    throw new ApiError(
+      httpStatus.FORBIDDEN,
+      "Cannot delete kitchen display. It's required for system operation."
+    );
+  }
+
+  // Protect manager
+  if (staff.role === "MANAGER") {
+    throw new ApiError(
+      httpStatus.FORBIDDEN,
+      "Cannot delete manager account."
+    );
+  }
+
+  const deleted = await prisma.user.delete({
+    where: { id },
+    select: {
+      id: true,
+      fullName: true,
+      email: true,
+      role: true,
+    }
+  });
+
+  return deleted;
+};
+
 export const UserService = {
   getMyProfile,
   updateUser,
@@ -336,6 +590,10 @@ export const UserService = {
   changeUserRole,
   getAllUsers,
   suspendOrActivateUser,
-
-
+  createStaffByManager,   // ✅ Create Staff & Kitchen
+  getAllStaff,            // ✅ Get all staff
+  getSingleStaff,         // ✅ Get single staff
+  updateStaffByManager,   // ✅ Update staff
+  toggleStaffStatus,      // ✅ Toggle active/suspend
+  deleteStaffByManager,   // ✅ Delete staff
 };

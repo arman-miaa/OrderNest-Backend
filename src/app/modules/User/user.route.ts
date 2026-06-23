@@ -7,25 +7,62 @@ import { UserRole } from "@prisma/client";
 
 const router = express.Router();
 
-// get user profile
-router.get("/profile", auth(), checkBlockedStatus, UserController.getMyProfile);
+// ========== PROFILE ROUTES (All authenticated users) ==========
+router.get(
+  "/profile", 
+  auth(UserRole.MANAGER, UserRole.STAFF, UserRole.KITCHEN), 
+  checkBlockedStatus, 
+  UserController.getMyProfile
+);
 
-// update user profile
 router.put(
   "/update-profile",
-  auth(),
+  auth(UserRole.MANAGER, UserRole.STAFF, UserRole.KITCHEN),
   fileUploader.upload.fields([{ name: "image", maxCount: 1 }]),
   UserController.updateUser
 );
-router.put("/role-change", auth(), UserController.changeUserRole);
 
+// ========== MANAGER ROUTES ==========
+// Get all staff (STAFF + KITCHEN)
+router.get(
+  "/staff", 
+  auth(UserRole.MANAGER), 
+  UserController.getAllStaff
+);
 
-router.get("/admin/users", auth(UserRole.ADMIN), UserController.getAllUsers);
-router.get("/admin/user/:id", auth(UserRole.ADMIN), UserController.getSingleUserById);
+// Get single staff by ID
+router.get(
+  "/staff/:id", 
+  auth(UserRole.MANAGER), 
+  UserController.getSingleStaffById
+);
 
+// Create new staff/kitchen
+router.post(
+  "/staff/create", 
+  auth(UserRole.MANAGER), 
+  UserController.createStaff
+);
 
-router.patch("/admin/user/suspend/:id", auth(UserRole.ADMIN), UserController.suspendOrActivatedUser);
+// Update staff details
+router.put(
+  "/staff/:id", 
+  auth(UserRole.MANAGER), 
+  UserController.updateStaff
+);
 
-router.delete("/admin/user/:id", auth(UserRole.ADMIN), UserController.removeUserByAdmin);
+// Toggle staff status (Active/Suspended)
+router.patch(
+  "/staff/:id/toggle-status", 
+  auth(UserRole.MANAGER), 
+  UserController.toggleStaffStatus
+);
+
+// Delete staff (only WAITER, not KITCHEN)
+router.delete(
+  "/staff/:id", 
+  auth(UserRole.MANAGER), 
+  UserController.deleteStaff
+);
 
 export const userRoutes = router;

@@ -14,16 +14,23 @@ model User {
     profileImage String?    @default("")
     location     String?    @default("")
     password     String
+    phone        String?    @default("")
     dob          DateTime?
     isVerified   Boolean    @default(false)
     role         UserRole   @default(MANAGER)
     status       UserStatus @default(ACTIVE)
 
+
+    pin          String?    // 4-digit PIN for Staff/Kitchen login
+    shift        String?    // "morning" | "evening" | "all-day"
+    device       String?    // "Tablet-01", "Tablet-02", "Wall Screen"
+    lastLogin    DateTime?  // Track last login time
+
     fcmToken     String?
-    otp          Int? // for verification
+    otp          Int?
     otpExpiresAt DateTime?
-    createdAt    DateTime  @default(now())
-    updatedAt    DateTime  @updatedAt
+    createdAt    DateTime   @default(now())
+    updatedAt    DateTime   @updatedAt
 
     @@map("users")
 }
