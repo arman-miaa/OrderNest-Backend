@@ -104,23 +104,29 @@ enum TableStatus {
   AVAILABLE
   OCCUPIED
   RESERVED
+  DIRTY
 }
 
 enum OrderStatus {
   PENDING
+  SENT
   PREPARING
   READY
   SERVED
+  COMPLETED
   CANCELLED
 }
 
 enum PaymentStatus {
   PENDING
+  UNPAID
   PAID
-  FAILED
+  REFUNDED
 }
 
 enum AlertStatus {
   PENDING
+  ACKNOWLEDGED
   RESOLVED
+  DISMISSED
 }
