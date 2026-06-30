@@ -78,8 +78,9 @@ model Order {
   id            String        @id @default(auto()) @map("_id") @db.ObjectId
   tableId       String        @db.ObjectId
   table         Table         @relation(fields: [tableId], references: [id])
-  items         Json // Array of ordered items with quantity and price
+  items         Json
   totalAmount   Float
+  isVip         Boolean       @default(false)
   status        OrderStatus   @default(PENDING)
   paymentStatus PaymentStatus @default(PENDING)
   createdAt     DateTime      @default(now())
